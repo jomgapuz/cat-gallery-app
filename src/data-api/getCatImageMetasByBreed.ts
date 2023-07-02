@@ -17,7 +17,7 @@ export default async function getCatImageMetasByBreed({
   const response: APICatImageMeta[] = await fetch(
     `https://api.thecatapi.com/v1/images/search?breed_ids=${breedId}&page=${page}&limit=${limit}&has_breeds=${
       hasBreedInfo ? 1 : 0
-    }`,
+    }&order=DESC`,
     {
       headers: {
         "x-api-key": ensureNonEmptyString(VITE_CATS_API_KEY),

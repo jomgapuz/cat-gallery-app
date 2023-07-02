@@ -2,23 +2,24 @@ import { dequal } from "dequal";
 import * as React from "react";
 import { areErrorMessagesEquals } from "../lib/error-lib";
 import { Maybe } from "../lib/generic-types";
+import stableHash from "stable-hash";
 
 const GLOBAL_ASYNC_DATA_CONTEXT = React.createContext({
   data: {} as Record<string, any>,
   listeners: {} as Record<string, (() => void)[]>,
   promises: {} as Record<string, Promise<any> | undefined>,
-  errors: {} as Record<string, Error | undefined>,
+  errors: {} as Record<string, any>,
 });
 
 export type UseGlobalAsyncDataOptions = {
   checkError?: (a: Maybe<Error>, b: Maybe<Error>) => boolean;
 };
 
-export default function useGlobalAsyncData<T>(
-  key: string,
+export default function useGlobalAsyncData<T, Key>(
+  key: Maybe<Key>,
   getData: (
     // eslint-disable-next-line no-shadow
-    key: string
+    key: Key
   ) => Promise<T>,
   { checkError = areErrorMessagesEquals }: UseGlobalAsyncDataOptions = {}
 ) {
@@ -33,36 +34,52 @@ export default function useGlobalAsyncData<T>(
 
   const [getDataMemoed] = React.useState(() => getData);
 
+  const keyHash = stableHash(key);
+
+  const fullKey = React.useMemo(
+    () => (key ? { hash: keyHash, key } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [keyHash]
+  );
+
   const refetch = React.useMemo(() => {
-    if (!Array.isArray(globalListeners[key])) {
-      globalListeners[key] = [];
+    if (fullKey == null) {
+      return () => {
+        //
+      };
+    }
+
+    const { hash, key: keyLocal } = fullKey;
+
+    if (!Array.isArray(globalListeners[hash])) {
+      globalListeners[hash] = [];
     }
 
     const listen = () => {
-      for (const listenLocal of globalListeners[key]) {
+      for (const listenLocal of globalListeners[hash]) {
         listenLocal();
       }
     };
 
     const getDataAsync = async () => {
-      globalErrors[key] = undefined;
+      globalErrors[hash] = undefined;
 
-      return getDataMemoed(key);
+      return getDataMemoed(keyLocal);
     };
 
     return () => {
-      if (!globalPromises[key]) {
-        globalPromises[key] = getDataAsync()
+      if (!globalPromises[hash]) {
+        globalPromises[hash] = getDataAsync()
           .then((result) => {
-            if (!dequal(globalData[key], result)) {
-              globalData[key] = result;
+            if (!dequal(globalData[hash], result)) {
+              globalData[hash] = result;
             }
           })
           .catch((error) => {
-            globalErrors[key] = error;
+            globalErrors[hash] = error;
           })
           .finally(() => {
-            if (globalPromises[key]) globalPromises[key] = undefined;
+            if (globalPromises[hash]) globalPromises[hash] = undefined;
             listen();
           });
       }
@@ -70,12 +87,12 @@ export default function useGlobalAsyncData<T>(
       listen();
     };
   }, [
+    fullKey,
     getDataMemoed,
     globalData,
     globalErrors,
     globalListeners,
     globalPromises,
-    key,
   ]);
 
   const [, _set] = React.useState([]);
@@ -84,9 +101,17 @@ export default function useGlobalAsyncData<T>(
     _set([]);
   }, []);
 
-  const data = globalData[key] as T | undefined;
-  const loading = Boolean(globalPromises[key]);
-  const error = globalErrors[key];
+  const { data, loading, error } = fullKey
+    ? {
+        data: globalData[fullKey.hash] as T | undefined,
+        loading: Boolean(globalPromises[fullKey.hash]),
+        error: globalErrors[fullKey.hash],
+      }
+    : {
+        data: undefined,
+        loading: false,
+        error: undefined,
+      };
 
   const isRerenderOnRef = React.useRef({
     data: false,
@@ -95,12 +120,16 @@ export default function useGlobalAsyncData<T>(
   });
 
   React.useEffect(() => {
-    const { [key]: listeners } = globalListeners;
+    if (!fullKey) return;
+
+    const { hash } = fullKey;
+
+    const { [hash]: listeners } = globalListeners;
 
     const isRerenderOn = isRerenderOnRef.current;
 
     const handleDataChange = () => {
-      if (globalData[key] !== data) {
+      if (globalData[hash] !== data) {
         if (isRerenderOn.data) {
           rerender();
 
@@ -108,7 +137,7 @@ export default function useGlobalAsyncData<T>(
         }
       }
 
-      if (Boolean(globalPromises[key]) !== loading) {
+      if (Boolean(globalPromises[hash]) !== loading) {
         if (isRerenderOn.loading) {
           rerender();
 
@@ -116,7 +145,7 @@ export default function useGlobalAsyncData<T>(
         }
       }
 
-      if (!checkError(error, globalErrors[key])) {
+      if (!checkError(error, globalErrors[hash])) {
         if (isRerenderOn.error) {
           rerender();
 
@@ -137,11 +166,11 @@ export default function useGlobalAsyncData<T>(
     checkError,
     data,
     error,
+    fullKey,
     globalData,
     globalErrors,
     globalListeners,
     globalPromises,
-    key,
     loading,
     rerender,
   ]);
