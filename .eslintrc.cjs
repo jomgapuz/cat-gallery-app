@@ -10,6 +10,7 @@ module.exports = {
   parserOptions: { ecmaVersion: "latest", sourceType: "module" },
   plugins: ["react-refresh", "prettier"],
   rules: {
+    "no-shadow": "error",
     "no-console": "warn",
     "react-refresh/only-export-components": "warn",
     "prettier/prettier": "warn",
