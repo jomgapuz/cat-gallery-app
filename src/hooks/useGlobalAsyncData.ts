@@ -4,47 +4,60 @@ import { areErrorMessagesEquals } from "../lib/error-lib";
 import { Maybe } from "../lib/generic-types";
 import stableHash from "stable-hash";
 
-const GLOBAL_ASYNC_DATA_CONTEXT = React.createContext({
+export type InferContext<T> = T extends React.Context<infer U> ? U : never;
+
+export const GLOBAL_ASYNC_DATA_CONTEXT = React.createContext({
   data: {} as Record<string, any>,
   listeners: {} as Record<string, (() => void)[]>,
+  fetchers: {} as Record<string, (key: any) => any>,
   promises: {} as Record<string, Promise<any> | undefined>,
   errors: {} as Record<string, any>,
 });
+
+export type GlobalAsyncDataContext = InferContext<
+  typeof GLOBAL_ASYNC_DATA_CONTEXT
+>;
 
 export type UseGlobalAsyncDataOptions = {
   checkError?: (a: Maybe<Error>, b: Maybe<Error>) => boolean;
 };
 
+export function useGlobalAsyncDataContext() {
+  return React.useContext(GLOBAL_ASYNC_DATA_CONTEXT);
+}
+
 export default function useGlobalAsyncData<T, Key>(
   key: Maybe<Key>,
-  getData: (
-    // eslint-disable-next-line no-shadow
-    key: Key
-  ) => Promise<T>,
+  getData: (key: Key) => Promise<T>,
   { checkError = areErrorMessagesEquals }: UseGlobalAsyncDataOptions = {}
 ) {
-  const context = React.useContext(GLOBAL_ASYNC_DATA_CONTEXT);
+  const context = useGlobalAsyncDataContext();
 
   const {
     data: globalData,
     listeners: globalListeners,
     promises: globalPromises,
     errors: globalErrors,
+    fetchers: globalFetchers,
   } = context;
 
   const [getDataMemoed] = React.useState(() => getData);
 
   const keyHash = stableHash(key);
 
-  const fullKey = React.useMemo(
-    () => (key ? { hash: keyHash, key } : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keyHash]
-  );
+  const fullKey = React.useMemo(() => {
+    if (key) {
+      globalFetchers[keyHash] = getDataMemoed;
+
+      return { hash: keyHash, key };
+    }
+
+    return null;
+  }, [keyHash]);
 
   const refetch = React.useMemo(() => {
     if (fullKey == null) {
-      return () => {
+      return async () => {
         //
       };
     }
@@ -64,10 +77,10 @@ export default function useGlobalAsyncData<T, Key>(
     const getDataAsync = async () => {
       globalErrors[hash] = undefined;
 
-      return getDataMemoed(keyLocal);
+      return globalFetchers[hash](keyLocal);
     };
 
-    return () => {
+    return async () => {
       if (!globalPromises[hash]) {
         globalPromises[hash] = getDataAsync()
           .then((result) => {
@@ -88,9 +101,9 @@ export default function useGlobalAsyncData<T, Key>(
     };
   }, [
     fullKey,
-    getDataMemoed,
     globalData,
     globalErrors,
+    globalFetchers,
     globalListeners,
     globalPromises,
   ]);
@@ -194,4 +207,81 @@ export default function useGlobalAsyncData<T, Key>(
     },
     refetch,
   };
+}
+
+export function getCurrentGlobalAsyncData<Result = any>(
+  context: GlobalAsyncDataContext,
+  key: any
+) {
+  if (key == null) return undefined;
+
+  const keyHash = stableHash(key);
+
+  return context.data[keyHash] as Result | undefined;
+}
+
+export async function refetchGlobalAsyncData<Key, Result>(
+  {
+    listeners: globalListeners,
+    errors: globalErrors,
+    fetchers: globalFetchers,
+    promises: globalPromises,
+    data: globalData,
+  }: GlobalAsyncDataContext,
+  key: Maybe<Key>,
+  getData: (key: Key) => Promise<Result>
+) {
+  if (key == null) return undefined;
+
+  const keyHash = stableHash(key);
+
+  globalFetchers[keyHash] = getData;
+
+  if (!Array.isArray(globalListeners[keyHash])) {
+    globalListeners[keyHash] = [];
+  }
+
+  const listen = () => {
+    for (const listenLocal of globalListeners[keyHash]) {
+      listenLocal();
+    }
+  };
+
+  const getDataAsync = async () => {
+    globalErrors[keyHash] = undefined;
+
+    return globalFetchers[keyHash](key);
+  };
+
+  const currentPromise = globalPromises[keyHash];
+
+  if (!currentPromise) {
+    const newPromise = getDataAsync()
+      .then((result) => {
+        if (!dequal(globalData[keyHash], result)) {
+          globalData[keyHash] = result;
+        }
+      })
+      .catch((error) => {
+        globalErrors[keyHash] = error;
+      })
+      .finally(() => {
+        if (globalPromises[keyHash]) globalPromises[keyHash] = undefined;
+        listen();
+      });
+
+    globalPromises[keyHash] = newPromise;
+
+    listen();
+
+    await newPromise;
+
+    return globalData[keyHash] as Result | undefined;
+  }
+
+  listen();
+
+  await currentPromise;
+
+  return globalData[keyHash] as Result | undefined;
 }
