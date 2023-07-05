@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useBreeds } from "../breeds/useBreeds";
 import { findBreedById } from "../../lib/breed-api-lib";
 import CatImages from "./CatImages";
@@ -13,6 +13,7 @@ import {
   useGlobalAsyncDataContext,
 } from "../../hooks/useGlobalAsyncData";
 import getCatImageMetasByBreed from "../../data-api/getCatImageMetasByBreed";
+import getCatImageMeta from "../../data-api/getCatImageMeta";
 
 const LIMIT = 10;
 
@@ -201,6 +202,9 @@ export default function CatImageGrid() {
     }
   }, [globalContext, selectedBreed]);
 
+  const { search } = useLocation();
+  const navigate = useNavigate();
+
   if (!selectedBreed) {
     return (
       <>
@@ -222,6 +226,21 @@ export default function CatImageGrid() {
             limit={LIMIT}
             fetchAt={fetchAt}
             onLoad={handleOnLoad}
+            onViewDetails={(imageMeta) => {
+              refetchGlobalAsyncData(
+                globalContext,
+                { imageId: imageMeta.id },
+                ({ imageId }) => getCatImageMeta(imageId),
+                imageMeta
+              );
+
+              const { id } = imageMeta;
+
+              navigate({
+                pathname: `/${id}`,
+                search,
+              });
+            }}
           />
         ))}
       </StyledDivFlex>

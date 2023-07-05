@@ -229,7 +229,8 @@ export async function refetchGlobalAsyncData<Key, Result>(
     data: globalData,
   }: GlobalAsyncDataContext,
   key: Maybe<Key>,
-  getData: (key: Key) => Promise<Result>
+  getData: (key: Key) => Promise<Result>,
+  data?: Result
 ) {
   if (key == null) return undefined;
 
@@ -254,6 +255,10 @@ export async function refetchGlobalAsyncData<Key, Result>(
   };
 
   const currentPromise = globalPromises[keyHash];
+
+  if (data !== undefined) {
+    globalData[keyHash] = data;
+  }
 
   if (!currentPromise) {
     const newPromise = getDataAsync()

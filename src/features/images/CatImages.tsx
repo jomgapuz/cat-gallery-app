@@ -21,6 +21,7 @@ export type CatImagesProps = {
   limit?: number;
   fetchAt?: number;
   onLoad?: (imageMetas: APICatImageMeta[] | undefined, page: number) => void;
+  onViewDetails?: (imageMeta: APICatImageMeta) => void;
 };
 
 export default function CatImages({
@@ -29,6 +30,7 @@ export default function CatImages({
   limit,
   fetchAt,
   onLoad,
+  onViewDetails,
 }: CatImagesProps) {
   const { data: imageMetas, refetch } = useBreedImages({
     breedId,
@@ -48,19 +50,28 @@ export default function CatImages({
 
   return (
     <>
-      {imageMetas?.map(({ id, url, width, height }) => (
-        <StyledDivCard key={id}>
-          <StyledImg
-            src={url}
-            alt={id}
-            style={{ height: height * (236 / width) }}
-          />
+      {imageMetas?.map((imageMeta) => {
+        const { id, url, width, height } = imageMeta;
 
-          <div className="p-3">
-            <Button variant="primary w-100">View Details</Button>
-          </div>
-        </StyledDivCard>
-      ))}
+        return (
+          <StyledDivCard key={id}>
+            <StyledImg
+              src={url}
+              alt={id}
+              style={{ height: height * (236 / width) }}
+            />
+
+            <div className="p-3">
+              <Button
+                onClick={() => onViewDetails?.(imageMeta)}
+                variant="primary w-100"
+              >
+                View Details
+              </Button>
+            </div>
+          </StyledDivCard>
+        );
+      })}
     </>
   );
 }
